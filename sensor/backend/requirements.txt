@@ -1,0 +1,5 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+numpy==2.2.1
+orjson==3.10.13
+confluent-kafka==2.6.1

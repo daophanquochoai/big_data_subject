@@ -1,0 +1,208 @@
+# v2: docker compose up -d --build   (xem README)
+# Mọi giao diện mở trên 127.0.0.1: Spark UI, Kafka, Kafka UI không có đăng nhập. Muốn mở cho mạng LAN thì bỏ "127.0.0.1:".
+# Mật khẩu lấy từ biến môi trường; giá trị mặc định chỉ dành cho máy phát triển.
+
+x-pdm: &pdm
+  image: pdm-v2
+  build:
+    context: spark/docker
+  working_dir: /app
+  # Mã, dữ liệu, kho và Thư mục mô hình ở cùng đường dẫn trong mọi container Spark, để executor đọc được thứ driver chỉ định.
+  volumes:
+    - ./spark:/app
+    - ./data:/data
+    - ./models:/models
+
+x-spark-node: &spark-node
+  <<: *pdm
+  volumes:
+    - ./spark:/app
+    - ./data:/data
+    - ./models:/models
+    - checkpoints:/checkpoints
+
+services:
+  kafka:
+    image: apache/kafka:4.2.2
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # PLAINTEXT cho các container; EXTERNAL cho client chạy trên máy (localhost:9094).
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka:/var/lib/kafka/data
+    ports:
+      - "127.0.0.1:9094:9094"
+    healthcheck:
+      test: /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.1.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pdm
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:8085:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # Bộ giả lập cảm biến: BE FastAPI + FE React tĩnh. Chờ init để chỉ phát lại nhóm phát lại.
+  sensor:
+    build: sensor
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    volumes:
+      - ./data/raw/cmapss:/data/raw/cmapss:ro
+      - ./models:/models:ro       # đọc norm_stats/groups.json
+      - sensor-state:/state       # kịch bản, số mã Máy ảo kế tiếp
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: pdm
+      POSTGRES_USER: pdm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdm}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./spark/docker/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: pg_isready -U pdm -d pdm
+      interval: 5s
+      retries: 30
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdm}
+    volumes:
+      - ./spark/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./spark/docker/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  spark-master:
+    <<: *pdm
+    command: spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
+    environment:
+      SPARK_PUBLIC_DNS: localhost  # link giữa các trang Spark trỏ về localhost, mở được từ trình duyệt trên máy
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  spark-worker-1:
+    <<: *spark-node
+    command: spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --cores 2 --memory 2g --webui-port 8081
+    environment:
+      SPARK_PUBLIC_DNS: localhost
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      - spark-master
+
+  spark-worker-2:
+    <<: *spark-node
+    command: spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --cores 2 --memory 2g --webui-port 8082
+    environment:
+      SPARK_PUBLIC_DNS: localhost
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      - spark-master
+
+  # Chạy một lần rồi thoát: chia nhóm Máy, bảng thống kê chuẩn hóa, phiên bản đầu tiên học 20% nhóm huấn luyện gốc.
+  init:
+    <<: *pdm
+    command:
+      - sh
+      - -ec
+      - |
+        if [ -f /models/current.json ]; then echo "Đã có Mô hình đang dùng: $$(cat /models/current.json)"; exit 0; fi
+        for s in FD001 FD002 FD003 FD004; do
+          [ -f /data/raw/cmapss/train_$$s.txt ] || { echo "Thiếu data/raw/cmapss/train_$$s.txt (dữ liệu C-MAPSS)" >&2; exit 1; }
+        done
+        python src/jobs/prepare_data.py
+        python src/jobs/train.py 0.2
+
+  # Driver của job luồng; Spark UI (tab Structured Streaming) ở cổng 4040.
+  spark:
+    <<: *spark-node
+    command: python src/jobs/stream.py
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_PUBLIC_DNS: localhost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdm}
+    ports:
+      - "127.0.0.1:4040:4040"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
+
+  # Airflow 3 standalone: DAG retrain_rul gửi job huấn luyện lại lên cụm. Spark UI của job đó ở cổng 4041.
+  airflow:
+    <<: *pdm
+    command: /opt/airflow/bin/airflow standalone
+    environment:
+      # Venv của Airflow ở CUỐI PATH: standalone tìm thấy lệnh airflow, còn python3 của spark-submit vẫn là
+      # Python hệ thống có PySpark.
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/airflow/bin
+      AIRFLOW_HOME: /opt/airflow-home
+      AIRFLOW__CORE__DAGS_FOLDER: /app/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://pdm:${POSTGRES_PASSWORD:-pdm}@postgres:5432/airflow
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"  # không đăng nhập: cổng chỉ mở trên localhost
+      SPARK_MASTER: spark://spark-master:7077
+      SPARK_PUBLIC_DNS: localhost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdm}
+    volumes:
+      - ./spark:/app
+      - ./data:/data
+      - ./models:/models
+      - airflow-home:/opt/airflow-home
+    ports:
+      - "127.0.0.1:8088:8080"
+      - "127.0.0.1:4041:4041"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow-home:
+  kafka:
+  sensor-state:
+  postgres:
+  checkpoints:

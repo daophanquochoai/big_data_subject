@@ -1,0 +1,827 @@
+{
+ "uid": "pdm",
+ "title": "Bảo trì dự đoán",
+ "schemaVersion": 39,
+ "refresh": "5s",
+ "time": {
+  "from": "now-15m",
+  "to": "now"
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "machine",
+    "label": "Máy",
+    "type": "query",
+    "datasource": {
+     "type": "grafana-postgresql-datasource",
+     "uid": "pdm"
+    },
+    "multi": true,
+    "includeAll": false,
+    "refresh": 2,
+    "sort": 0,
+    "current": {
+     "text": [
+      "Tự động: 5 máy RUL thấp nhất"
+     ],
+     "value": [
+      "auto"
+     ]
+    },
+    "query": "SELECT __value, __text FROM (\n  SELECT 'auto' AS __value, 'Tự động: 5 máy RUL thấp nhất' AS __text, -1e9 AS o\n  UNION ALL SELECT machine_id, machine_id || ' (RUL ' || round(rul_pred::numeric) || ')', rul_pred FROM (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '15 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) t\n) v ORDER BY o LIMIT 300"
+   },
+   {
+    "name": "urgent",
+    "label": "Ngưỡng Gấp (RUL ≤)",
+    "type": "textbox",
+    "query": "30",
+    "current": {
+     "text": "30",
+     "value": "30"
+    }
+   },
+   {
+    "name": "medium",
+    "label": "Ngưỡng Trung bình (RUL ≤)",
+    "type": "textbox",
+    "query": "60",
+    "current": {
+     "text": "60",
+     "value": "60"
+    }
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Tổng thiết bị",
+   "description": "Số Máy có dự đoán trong 2 phút gần nhất và chưa hỏng.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "blue"
+     },
+     "unit": "none"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "WITH latest AS (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) SELECT count(*) AS value FROM latest"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Cần kiểm tra GẤP",
+   "description": "RUL dự đoán mới nhất ≤ ngưỡng Gấp.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "red"
+     },
+     "unit": "none"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "WITH latest AS (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) SELECT count(*) FILTER (WHERE rul_pred <= $urgent) AS value FROM latest"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Kiểm tra trung bình",
+   "description": "Ngưỡng Gấp < RUL dự đoán mới nhất ≤ ngưỡng Trung bình.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "orange"
+     },
+     "unit": "none"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "WITH latest AS (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) SELECT count(*) FILTER (WHERE rul_pred > $urgent AND rul_pred <= $medium) AS value FROM latest"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Bình thường",
+   "description": "RUL dự đoán mới nhất > ngưỡng Trung bình.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "green"
+     },
+     "unit": "none"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "WITH latest AS (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) SELECT count(*) FILTER (WHERE rul_pred > $medium) AS value FROM latest"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "timeseries",
+   "title": "RUL dự đoán theo thời gian",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Các Máy chọn ở biến Máy; \"Tự động\" là 5 Máy có RUL dự đoán mới nhất thấp nhất. Dải nền: đỏ dưới 30, cam dưới 60 (cố định, không theo biến ngưỡng).",
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 16,
+    "h": 11
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "showPoints": "never",
+      "thresholdsStyle": {
+       "mode": "area"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "rgba(214,69,69,0.12)",
+        "value": null
+       },
+       {
+        "color": "rgba(230,145,56,0.12)",
+        "value": 30
+       },
+       {
+        "color": "transparent",
+        "value": 60
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "WITH auto AS (SELECT machine_id FROM (SELECT DISTINCT ON (machine_id) machine_id, rul_pred FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id) ORDER BY machine_id, window_end DESC) t ORDER BY rul_pred LIMIT 5)\nSELECT window_end AS time, machine_id AS metric, rul_pred FROM predictions\nWHERE $__timeFilter(window_end)\n  AND (machine_id IN ($machine) OR ('auto' IN ($machine) AND machine_id IN (SELECT machine_id FROM auto)))\nORDER BY 1"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "Số thiết bị theo mức",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Mỗi khoảng 30 giây: số Máy theo mức của các dự đoán trong khoảng đó. Máy đổi mức giữa khoảng thì được đếm ở cả hai mức.",
+   "gridPos": {
+    "x": 16,
+    "y": 5,
+    "w": 8,
+    "h": 11
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      },
+      "fillOpacity": 60,
+      "showPoints": "never"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Gấp"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Trung bình"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Bình thường"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT $__timeGroupAlias(window_end, '30s'),\n  count(DISTINCT machine_id) FILTER (WHERE rul_pred <= $urgent) AS \"Gấp\",\n  count(DISTINCT machine_id) FILTER (WHERE rul_pred > $urgent AND rul_pred <= $medium) AS \"Trung bình\",\n  count(DISTINCT machine_id) FILTER (WHERE rul_pred > $medium) AS \"Bình thường\"\nFROM predictions WHERE $__timeFilter(window_end) GROUP BY 1 ORDER BY 1"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "Lệnh bảo trì đang mở",
+   "description": "Lệnh của các Máy còn đang được theo dõi (có dự đoán trong 2 phút) và chưa hỏng.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "purple"
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT count(*) AS value FROM maintenance_orders o WHERE NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = o.machine_id) AND EXISTS (SELECT 1 FROM predictions p WHERE p.machine_id = o.machine_id AND p.window_end > now() - interval '2 minutes')"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "type": "stat",
+   "title": "Đã hỏng",
+   "description": "Số Máy ảo hỏng trong khoảng thời gian đang xem.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 5
+   },
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#808080"
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT count(*) AS value FROM failures WHERE $__timeFilter(failed_at)"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "type": "table",
+   "title": "Thiết bị cần kiểm tra (gấp trước)",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Dự đoán mới nhất của mỗi Máy đang được theo dõi. Bấm mã máy để thêm nó vào biểu đồ RUL.",
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 24,
+    "h": 10
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Mức"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "Gấp": {
+            "color": "red",
+            "index": 0
+           },
+           "Trung bình": {
+            "color": "orange",
+            "index": 1
+           },
+           "Bình thường": {
+            "color": "green",
+            "index": 2
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Mã"
+      },
+      "properties": [
+       {
+        "id": "links",
+        "value": [
+         {
+          "title": "Thêm vào biểu đồ RUL",
+          "url": "/d/pdm?${machine:queryparam}&var-machine=${__value.raw}&${urgent:queryparam}&${medium:queryparam}&${__url_time_range}"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "WITH latest AS (SELECT DISTINCT ON (machine_id) machine_id, rul_pred, failing_prob, window_end_cycle, model_version\n  FROM predictions WHERE window_end > now() - interval '2 minutes' AND NOT EXISTS (SELECT 1 FROM failures f WHERE f.machine_id = predictions.machine_id)\n  ORDER BY machine_id, window_end DESC)\nSELECT l.machine_id AS \"Mã\",\n  CASE WHEN l.rul_pred <= $urgent THEN 'Gấp' WHEN l.rul_pred <= $medium THEN 'Trung bình' ELSE 'Bình thường' END AS \"Mức\",\n  round(l.rul_pred::numeric, 1) AS \"RUL dự đoán\", round(l.failing_prob::numeric, 2) AS \"Xác suất Sắp hỏng\",\n  l.window_end_cycle AS \"Chu kỳ\", o.suggested_cycle AS \"Chu kỳ đề xuất bảo trì\",\n  o.suggested_cycle - l.window_end_cycle AS \"Còn (Chu kỳ)\", l.model_version AS \"Phiên bản\"\nFROM latest l LEFT JOIN maintenance_orders o USING (machine_id)\nORDER BY l.rul_pred LIMIT 100"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "type": "stat",
+   "title": "Lệnh bảo trì có kịp không",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Trên các Máy đã hỏng (có ít nhất một dự đoán) trong khoảng đang xem. Quá sớm: lệnh ra hơn 120 Chu kỳ trước khi hỏng.",
+   "gridPos": {
+    "x": 0,
+    "y": 26,
+    "w": 6,
+    "h": 9
+   },
+   "options": {
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "orientation": "vertical",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT round(100.0 * count(o.machine_id) FILTER (WHERE o.cycle < f.last_cycle) / nullif(count(*), 0), 1) AS \"% máy hỏng có lệnh trước\",\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY f.last_cycle - o.cycle) AS \"Trung vị Chu kỳ báo trước\",\n  count(*) FILTER (WHERE f.last_cycle - o.cycle > 120) AS \"Lệnh quá sớm\"\nFROM failures f LEFT JOIN maintenance_orders o USING (machine_id)\nWHERE $__timeFilter(f.failed_at) AND EXISTS (SELECT 1 FROM predictions p WHERE p.machine_id = f.machine_id)"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "type": "barchart",
+   "title": "Số Chu kỳ từ lúc ra lệnh tới khi hỏng",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "gridPos": {
+    "x": 6,
+    "y": 26,
+    "w": 6,
+    "h": 9
+   },
+   "options": {
+    "xField": "Báo trước (Chu kỳ)",
+    "showValue": "never",
+    "legend": {
+     "showLegend": false
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT CASE WHEN b > 20 THEN '≥200' ELSE ((b - 1) * 10)::text END AS \"Báo trước (Chu kỳ)\", count(*) AS \"Số máy\"\nFROM (SELECT width_bucket(f.last_cycle - o.cycle, 0, 200, 20) AS b\n      FROM failures f JOIN maintenance_orders o USING (machine_id) WHERE $__timeFilter(f.failed_at)) t\nGROUP BY b ORDER BY b"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "type": "barchart",
+   "title": "Sai số RUL theo phương pháp sinh",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "RMSE trên các Máy đã hỏng: RUL thật = Chu kỳ cuối − tuổi của cửa sổ, chặn ở 125 như nhãn huấn luyện.",
+   "gridPos": {
+    "x": 12,
+    "y": 26,
+    "w": 6,
+    "h": 9
+   },
+   "options": {
+    "xField": "Phương pháp",
+    "showValue": "always",
+    "legend": {
+     "showLegend": false
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT f.method AS \"Phương pháp\",\n  round(sqrt(avg(power(p.rul_pred - least(f.last_cycle - p.window_end_cycle, 125), 2)))::numeric, 1) AS \"RMSE\"\nFROM failures f JOIN predictions p USING (machine_id)\nWHERE $__timeFilter(f.failed_at) GROUP BY 1 ORDER BY 1"
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Dự đoán mỗi giây và độ trễ",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Độ trễ đầu-cuối = lúc ghi Postgres − event_time lớn nhất của cửa sổ.",
+   "gridPos": {
+    "x": 18,
+    "y": 26,
+    "w": 6,
+    "h": 9
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "showPoints": "never"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": "Độ trễ.*"
+      },
+      "properties": [
+       {
+        "id": "custom.axisPlacement",
+        "value": "right"
+       },
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT $__timeGroupAlias(window_end, '10s'), count(*) / 10.0 AS \"Dự đoán/giây\",\n  percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM written_at - window_end)) AS \"Độ trễ p50\",\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM written_at - window_end)) AS \"Độ trễ p95\"\nFROM predictions WHERE $__timeFilter(window_end) GROUP BY 1 ORDER BY 1"
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "type": "table",
+   "title": "Lịch sử Cổng kiểm định",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "pdm"
+   },
+   "description": "Mỗi lần chạy DAG retrain_rul: ứng viên được nhận khi RMSE thấp hơn và F1 không thấp hơn Mô hình đang dùng, đo trên nhóm kiểm định.",
+   "gridPos": {
+    "x": 0,
+    "y": 35,
+    "w": 24,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Kết quả"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "Được nhận": {
+            "color": "green",
+            "index": 0
+           },
+           "Không nhận": {
+            "color": "red",
+            "index": 1
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "pdm"
+     },
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT validated_at AS \"Lúc\", candidate AS \"Ứng viên\", round(candidate_rmse::numeric, 2) AS \"RMSE ứng viên\",\n  round(candidate_f1::numeric, 3) AS \"F1 ứng viên\", current AS \"Đang dùng\", round(current_rmse::numeric, 2) AS \"RMSE đang dùng\",\n  round(current_f1::numeric, 3) AS \"F1 đang dùng\", CASE WHEN accepted THEN 'Được nhận' ELSE 'Không nhận' END AS \"Kết quả\"\nFROM model_validation ORDER BY validated_at DESC LIMIT 20"
+    }
+   ]
+  }
+ ]
+}
