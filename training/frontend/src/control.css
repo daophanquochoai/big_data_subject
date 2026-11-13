@@ -1,0 +1,17 @@
+.control-shell{min-height:100vh}
+.control-shell>header{justify-content:space-between;flex-wrap:wrap;padding:18px 28px;gap:16px}
+.control-shell>header>div{display:grid;gap:5px}
+.control-shell>header strong{font-size:18px}
+.control-shell>header span{color:var(--muted);font-size:12px}
+.control-shell a{color:var(--accent)}
+.control-main{padding:20px 28px;max-width:1600px;width:100%;margin:auto;min-width:0;overflow:visible}
+.control-shell :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.training-containers{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.training-containers>div{border:1px solid var(--line);padding:14px;border-radius:7px;display:grid;gap:8px;min-width:0}
+.training-containers code{font-size:11px;overflow-wrap:anywhere}
+.training aside .training-fields{grid-template-columns:1fr 1fr}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.control-shell details summary{cursor:pointer}
+.control-shell button{font:inherit}
+.control-shell button:disabled{opacity:.5;cursor:default}
+@media(max-width:600px){.control-main{padding:16px}.control-shell>header{padding:16px}.training-containers{grid-template-columns:minmax(0,1fr)}}

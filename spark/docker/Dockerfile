@@ -1,3 +1,4 @@
+FROM docker:27.5.1-cli AS dockercli
 FROM python:3.12-slim-bookworm
 
 # Spark 4 cần Java 17; procps vì script khởi động của Spark gọi `ps`.
@@ -20,4 +21,5 @@ RUN python -c "from pyspark.sql import SparkSession; SparkSession.builder.master
 RUN python -m venv /opt/airflow  && /opt/airflow/bin/pip install --no-cache-dir "apache-airflow[postgres]==3.3.2"       --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
 
 ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 WORKDIR /app

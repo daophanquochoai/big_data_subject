@@ -11,10 +11,17 @@ export function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [history, setHistory] = useState<Point[]>([]);
-  const [tab, setTab] = useState<"monitor" | "preview">("monitor");
+  const [tab, setTab] = useState<"monitor" | "preview">('monitor');
   const [watching, setWatching] = useState<string | null>(null);
+  const selectTab = (value: "monitor" | "preview") => {
+    setTab(value);
+    const url = new URL(location.href);
+    url.searchParams.delete('tab');
+    window.history.replaceState(null, '', url);
+  };
 
   useEffect(() => {
+    if (new URLSearchParams(location.search).get('tab') === 'training') location.replace('http://localhost:8001/'+location.search);
     api.config().then(setConfig);
   }, []);
 
@@ -42,8 +49,9 @@ export function App() {
         {config && <Controls config={config} onSaved={setConfig} />}
         <main>
           <nav className="tabs">
-            <button className={tab === "monitor" ? "on" : ""} onClick={() => setTab("monitor")}>Theo dõi</button>
-            <button className={tab === "preview" ? "on" : ""} onClick={() => setTab("preview")}>Xem trước</button>
+            <button className={tab === "monitor" ? "on" : ""} onClick={() => selectTab("monitor")}>Theo dõi</button>
+            <button className={tab === "preview" ? "on" : ""} onClick={() => selectTab("preview")}>Xem trước</button>
+            <a className="training-link" href="http://localhost:8001/">Huấn luyện ↗</a>
           </nav>
           {tab === "monitor" && (
             <>

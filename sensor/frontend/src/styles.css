@@ -74,3 +74,5 @@ tr.clickable:hover { background: var(--bg); }
 @media (min-width: 801px) { .body:has(.drawer) { grid-template-columns: 300px 1fr minmax(380px, 40%); } }
 .drawer { background: var(--panel); border-left: 1px solid var(--line); padding: 0 16px 16px; overflow-y: auto; }
 .drawer .charts { grid-template-columns: 1fr; }
+
+.training-link{align-self:center;padding:8px 12px;color:var(--accent);text-decoration:none}
